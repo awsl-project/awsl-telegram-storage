@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "awsl-telegram-storage",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-12-12",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
