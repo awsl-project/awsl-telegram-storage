@@ -1,12 +1,7 @@
 import { OpenAPIRoute } from 'chanfana'
 import { z } from 'zod'
 import type { Context } from 'hono'
-
-const FileInfo = z.object({
-  file_id: z.string(),
-  width: z.number().optional(),
-  height: z.number().optional(),
-})
+import { FileInfo, ENDPOINT_MAP, buildApiUrl, parsePhotoFiles, parseDocumentFile } from './telegram'
 
 export class FileUploadEndpoint extends OpenAPIRoute {
   schema = {
@@ -58,9 +53,12 @@ export class FileUploadEndpoint extends OpenAPIRoute {
       return c.json({ success: false, error: 'No file or URL provided' }, 400)
     }
 
-    const endpoint = mediaType === 'photo' ? 'sendPhoto' : 'sendDocument'
-    const apiUrl = `https://api.telegram.org/bot${c.env.BOT_TOKEN}/${endpoint}`
-    const fetchOptions = this.buildFetchOptions(c.env.CHAT_ID, mediaType, file, url)
+    const endpoint = ENDPOINT_MAP[mediaType] || 'sendPhoto'
+    const apiUrl = buildApiUrl(c.env.BOT_TOKEN, endpoint)
+
+    const fetchOptions: RequestInit = file instanceof File
+      ? { method: 'POST', body: this.buildFormData(c.env.CHAT_ID, mediaType, file) }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: c.env.CHAT_ID, [mediaType]: url }) }
 
     const res = await fetch(apiUrl, fetchOptions)
     const data = await res.json() as any
@@ -69,27 +67,17 @@ export class FileUploadEndpoint extends OpenAPIRoute {
       return c.json({ success: false, error: data.description }, 400)
     }
 
-    return c.json({ success: true, files: this.parseFiles(data.result, mediaType) })
+    const files = mediaType === 'photo'
+      ? parsePhotoFiles(data.result.photo)
+      : parseDocumentFile(data.result.document)
+
+    return c.json({ success: true, files })
   }
 
-  private buildFetchOptions(chatId: string, mediaType: string, file: unknown, url?: string): RequestInit {
-    if (file instanceof File) {
-      const formData = new FormData()
-      formData.append('chat_id', chatId)
-      formData.append(mediaType, file, file.name)
-      return { method: 'POST', body: formData }
-    }
-    return {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, [mediaType]: url })
-    }
-  }
-
-  private parseFiles(result: any, mediaType: string) {
-    if (mediaType === 'photo') {
-      return result.photo.map((p: any) => ({ file_id: p.file_id, width: p.width, height: p.height }))
-    }
-    return [{ file_id: result.document.file_id }]
+  private buildFormData(chatId: string, mediaType: string, file: File): FormData {
+    const formData = new FormData()
+    formData.append('chat_id', chatId)
+    formData.append(mediaType, file, file.name)
+    return formData
   }
 }

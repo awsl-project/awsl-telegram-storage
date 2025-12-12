@@ -2,6 +2,7 @@ import { fromHono } from 'chanfana'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { FileUploadEndpoint } from './api_upload'
+import { MediaGroupUploadEndpoint } from './api_upload_group'
 import { FileDownloadEndpoint } from './api_download'
 
 type Bindings = {
@@ -25,6 +26,7 @@ const openapi = fromHono(app, {
 })
 
 openapi.post('/api/upload', FileUploadEndpoint)
+openapi.post('/api/upload/group', MediaGroupUploadEndpoint)
 openapi.get('/file/:file_id', FileDownloadEndpoint)
 
 export default app
