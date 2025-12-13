@@ -26,16 +26,10 @@ flowchart LR
         Storage[(文件存储)]
     end
 
-    Client -->|上传文件/URL| API
-    API -->|sendPhoto/sendDocument| Bot
-    Bot -->|存储| Storage
-    Bot -->|返回 file_id| API
-    API -->|返回 file_id| Client
-
-    Client -->|请求 file_id| API
-    API -->|getFile| Bot
-    Bot -->|文件流| API
-    API -->|文件流| Client
+    Client -->|1. 上传文件| API --> Bot --> Storage
+    API -.->|2. 返回 file_id| Client
+    Client -->|3. 使用 file_id 请求| API
+    API -.->|4. 返回文件流| Client
 ```
 
 ## 技术栈
