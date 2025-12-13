@@ -1,21 +1,269 @@
-```txt
-npm install
-npm run dev
+# AWSL Telegram Storage
+
+基于 Cloudflare Workers 的 Telegram 文件存储 API 服务。利用 Telegram Bot API 实现文件的上传和下载功能，可作为轻量级的文件托管解决方案。
+
+## 功能特性
+
+- **单文件上传** - 支持通过文件或 URL 上传图片/文档到 Telegram
+- **媒体组上传** - 批量上传多张图片（1-10张）组成媒体组
+- **文件下载** - 通过 file_id 从 Telegram 下载文件
+- **OpenAPI 文档** - 自动生成的 API 文档，支持在线调试
+- **CORS 支持** - 跨域请求支持
+- **API 鉴权** - 基于 Token 的接口访问控制
+
+## 架构图
+
+```mermaid
+flowchart LR
+    Client([客户端])
+
+    subgraph CF[Cloudflare Workers]
+        API[API Service]
+    end
+
+    subgraph TG[Telegram]
+        Bot[Bot API]
+        Storage[(文件存储)]
+    end
+
+    Client -->|上传文件/URL| API
+    API -->|sendPhoto/sendDocument| Bot
+    Bot -->|存储| Storage
+    Bot -->|返回 file_id| API
+    API -->|返回 file_id| Client
+
+    Client -->|请求 file_id| API
+    API -->|getFile| Bot
+    Bot -->|文件流| API
+    API -->|文件流| Client
 ```
 
-```txt
-npm run deploy
+## 技术栈
+
+- [Cloudflare Workers](https://workers.cloudflare.com/) - Serverless 运行时
+- [Hono](https://hono.dev/) - 轻量级 Web 框架
+- [Chanfana](https://github.com/cloudflare/chanfana) - OpenAPI 规范生成
+- [Zod](https://zod.dev/) - TypeScript 优先的数据验证
+- TypeScript
+
+## 快速开始
+
+### 前置条件
+
+1. [Node.js](https://nodejs.org/) >= 18
+2. [Cloudflare 账号](https://dash.cloudflare.com/)
+3. Telegram Bot Token（通过 [@BotFather](https://t.me/BotFather) 创建）
+4. Telegram Chat ID（用于存储文件的频道/群组/私聊 ID）
+
+### 安装
+
+```bash
+# 克隆项目
+git clone https://github.com/your-username/awsl-telegram-storage.git
+cd awsl-telegram-storage
+
+# 安装依赖
+pnpm install
 ```
 
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
+### 配置
 
-```txt
-npm run cf-typegen
+1. 复制配置模板：
+
+```bash
+cp wrangler.jsonc.template wrangler.jsonc
 ```
 
-Pass the `CloudflareBindings` as generics when instantiation `Hono`:
+2. 编辑 `wrangler.jsonc`，修改 `routes` 中的自定义域名（可选）
 
-```ts
-// src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+3. 配置环境变量：
+
+**本地开发**：创建 `.dev.vars` 文件：
+
+```env
+BOT_TOKEN=your_telegram_bot_token
+CHAT_ID=your_telegram_chat_id
+API_TOKEN=your_api_access_token
 ```
+
+**生产部署**：使用 Wrangler CLI 设置密钥：
+
+```bash
+pnpm wrangler secret put BOT_TOKEN
+pnpm wrangler secret put CHAT_ID
+pnpm wrangler secret put API_TOKEN
+```
+
+### 环境变量说明
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11` |
+| `CHAT_ID` | 存储文件的 Chat ID | `-1001234567890` 或 `@channel_name` |
+| `API_TOKEN` | API 访问令牌（自定义） | `my-secure-token-123` |
+
+### 运行
+
+```bash
+# 本地开发
+pnpm run dev
+
+# 部署到 Cloudflare Workers
+pnpm run deploy
+
+# 构建（不部署）
+pnpm run build
+```
+
+## API 文档
+
+部署后访问 `/docs` 查看交互式 API 文档。
+
+### 端点列表
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/upload` | 上传单个文件 |
+| `POST` | `/api/upload/group` | 上传媒体组 |
+| `GET` | `/file/:file_id` | 下载文件 |
+| `GET` | `/docs` | API 文档 |
+| `GET` | `/openapi.json` | OpenAPI 规范 |
+
+### 上传单个文件
+
+```bash
+# 通过文件上传
+curl -X POST https://your-domain.com/api/upload \
+  -H "X-Api-Token: your_api_token" \
+  -F "file=@/path/to/image.jpg" \
+  -F "media_type=photo"
+
+# 通过 URL 上传
+curl -X POST https://your-domain.com/api/upload \
+  -H "X-Api-Token: your_api_token" \
+  -H "Content-Type: multipart/form-data" \
+  -F "url=https://example.com/image.jpg" \
+  -F "media_type=photo"
+```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `file` | File | 否* | 要上传的文件 |
+| `url` | string | 否* | 文件的 URL 地址 |
+| `media_type` | string | 否 | 媒体类型：`photo`（默认）或 `document` |
+
+\* `file` 和 `url` 必须提供其中之一
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "files": [
+    { "file_id": "AgACAgIAAxkB...", "width": 1920, "height": 1080 },
+    { "file_id": "AgACAgIAAxkB...", "width": 320, "height": 180 }
+  ]
+}
+```
+
+> 注：图片上传会返回多个不同尺寸的文件，文档上传仅返回一个文件
+
+### 上传媒体组
+
+```bash
+curl -X POST https://your-domain.com/api/upload/group \
+  -H "X-Api-Token: your_api_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": [
+      "https://example.com/image1.jpg",
+      "https://example.com/image2.jpg"
+    ],
+    "caption": "可选的图片说明"
+  }'
+```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `urls` | string[] | 是 | 图片 URL 数组（1-10 个） |
+| `caption` | string | 否 | 媒体组说明（显示在第一张图片下方） |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "files": [
+    [
+      { "file_id": "AgACAgIAAxkB...", "width": 1920, "height": 1080 },
+      { "file_id": "AgACAgIAAxkB...", "width": 320, "height": 180 }
+    ],
+    [
+      { "file_id": "AgACAgIAAxkB...", "width": 1920, "height": 1080 },
+      { "file_id": "AgACAgIAAxkB...", "width": 320, "height": 180 }
+    ]
+  ]
+}
+```
+
+### 下载文件
+
+```bash
+# 直接下载
+curl https://your-domain.com/file/AgACAgIAAxkB...
+
+# 保存到本地
+curl -o image.jpg https://your-domain.com/file/AgACAgIAAxkB...
+```
+
+> 下载端点无需 API Token 鉴权
+
+## 项目结构
+
+```
+awsl-telegram-storage/
+├── src/
+│   ├── index.ts           # 应用入口，路由配置
+│   ├── api_upload.ts      # 单文件上传端点
+│   ├── api_upload_group.ts # 媒体组上传端点
+│   ├── api_download.ts    # 文件下载端点
+│   └── telegram.ts        # Telegram API 工具函数
+├── wrangler.jsonc.template # Wrangler 配置模板
+├── tsconfig.json          # TypeScript 配置
+└── package.json           # 项目依赖
+```
+
+## 限制说明
+
+- Telegram Bot API 对文件大小有限制，详见 [官方文档](https://core.telegram.org/bots/api#sending-files)
+- 媒体组最多包含 10 个媒体
+- `photo` 类型会压缩图片，如需保持原图请使用 `document` 类型
+- 通过 URL 上传时，Telegram 服务器需要能访问该 URL
+
+## 获取 Telegram Chat ID
+
+Chat ID 支持两种格式：
+- **数字 ID**：如 `-1001234567890`
+- **@username**：公开频道/群组可直接使用 `@channel_name` 格式
+
+### 获取数字 ID 的方法
+
+1. **私聊 Bot**：向 Bot 发送消息后，访问 `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates` 查看 `chat.id`
+
+2. **频道**：将 Bot 添加为频道管理员，向频道发送消息，然后通过 `getUpdates` API 获取 `chat.id`（通常为负数，如 `-1001234567890`）
+
+3. **群组**：将 Bot 添加到群组，在群组中 @Bot 或发送消息，然后通过 `getUpdates` API 获取
+
+> 提示：公开频道可直接使用 `@username` 作为 CHAT_ID，无需获取数字 ID
+
+## 许可证
+
+MIT License
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
