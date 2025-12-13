@@ -15,7 +15,7 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
         content: {
           'application/json': {
             schema: z.object({
-              urls: z.array(z.string()).min(2).max(10).describe('Array of URLs (2-10)'),
+              urls: z.array(z.string()).min(1).max(10).describe('Array of URLs (1-10)'),
               caption: z.string().optional().describe('Caption for the first media'),
             }),
           },
@@ -47,8 +47,8 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
     const urls = body.urls as string[]
     const caption = body.caption as string | undefined
 
-    if (!urls || urls.length < 2) {
-      return c.json({ success: false, error: 'At least 2 URLs required' }, 400)
+    if (!urls || urls.length < 1) {
+      return c.json({ success: false, error: 'At least 1 URL required' }, 400)
     }
 
     const media = urls.map((url, i) => ({
