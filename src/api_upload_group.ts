@@ -17,6 +17,7 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
             schema: z.object({
               urls: z.array(z.string()).min(1).max(10).describe('Array of URLs (1-10)'),
               caption: z.string().optional().describe('Caption for the first media'),
+              chat_id: z.string().optional().describe('Telegram chat ID (defaults to env CHAT_ID)'),
             }),
           },
         },
@@ -46,6 +47,7 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
     const body = await c.req.json()
     const urls = body.urls as string[]
     const caption = body.caption as string | undefined
+    const chatId = body.chat_id as string || c.env.CHAT_ID
 
     if (!urls || urls.length < 1) {
       return c.json({ success: false, error: 'At least 1 URL required' }, 400)
@@ -61,7 +63,7 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: c.env.CHAT_ID, media })
+      body: JSON.stringify({ chat_id: chatId, media })
     })
 
     const data = await res.json() as any

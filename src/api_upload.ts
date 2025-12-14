@@ -18,6 +18,7 @@ export class FileUploadEndpoint extends OpenAPIRoute {
               file: z.any().optional().describe('File to upload'),
               url: z.string().optional().describe('URL of file to upload'),
               media_type: z.enum(['photo', 'document']).optional().default('photo').describe('Media type'),
+              chat_id: z.string().optional().describe('Telegram chat ID (defaults to env CHAT_ID)'),
             }),
           },
         },
@@ -48,6 +49,7 @@ export class FileUploadEndpoint extends OpenAPIRoute {
     const file = body['file']
     const url = body['url'] as string | undefined
     const mediaType = (body['media_type'] as string) || 'photo'
+    const chatId = (body['chat_id'] as string) || c.env.CHAT_ID
 
     if (!file && !url) {
       return c.json({ success: false, error: 'No file or URL provided' }, 400)
@@ -57,8 +59,8 @@ export class FileUploadEndpoint extends OpenAPIRoute {
     const apiUrl = buildApiUrl(c.env.BOT_TOKEN, endpoint)
 
     const fetchOptions: RequestInit = file instanceof File
-      ? { method: 'POST', body: this.buildFormData(c.env.CHAT_ID, mediaType, file) }
-      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: c.env.CHAT_ID, [mediaType]: url }) }
+      ? { method: 'POST', body: this.buildFormData(chatId, mediaType, file) }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, [mediaType]: url }) }
 
     const res = await fetch(apiUrl, fetchOptions)
     const data = await res.json() as any
