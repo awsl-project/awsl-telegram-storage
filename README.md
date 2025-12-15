@@ -207,12 +207,28 @@ curl -X POST https://your-domain.com/api/upload/group \
 ### 下载文件
 
 ```bash
-# 直接下载
+# 直接下载（启用浏览器缓存，默认）
 curl https://your-domain.com/file/AgACAgIAAxkB...
+
+# 禁用浏览器缓存
+curl https://your-domain.com/file/AgACAgIAAxkB...?cache=false
 
 # 保存到本地
 curl -o image.jpg https://your-domain.com/file/AgACAgIAAxkB...
 ```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `cache` | string | 否 | `true` | 是否启用浏览器缓存（`true`/`false`） |
+
+**响应头**
+
+| 响应头 | 说明 | 可能值 |
+|--------|------|--------|
+| `X-Cache-Status` | 缓存状态 | `ENABLED` - 浏览器缓存已启用<br>`DISABLED` - 浏览器缓存已禁用 |
+| `Cache-Control` | 浏览器缓存控制 | 启用时：`public, max-age=604800, immutable`（7天）<br>禁用时：`no-store, no-cache, must-revalidate` |
 
 > 下载端点无需 API Token 鉴权
 
