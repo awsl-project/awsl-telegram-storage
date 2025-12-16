@@ -7,6 +7,8 @@
 - **单文件上传** - 支持通过文件或 URL 上传图片/文档到 Telegram
 - **媒体组上传** - 批量上传多张图片（1-10张）组成媒体组
 - **文件下载** - 通过 file_id 从 Telegram 下载文件
+- **视频流播放** - 多分片视频串联，支持 HTTP Range 请求和进度条拖动
+- **压缩优化** - 长视频支持 deflate 压缩 URL 参数
 - **OpenAPI 文档** - 自动生成的 API 文档，支持在线调试
 - **CORS 支持** - 跨域请求支持
 - **API 鉴权** - 基于 Token 的接口访问控制
@@ -120,6 +122,7 @@ pnpm run build
 | `POST` | `/api/upload` | 上传单个文件 |
 | `POST` | `/api/upload/group` | 上传媒体组 |
 | `GET` | `/file/:file_id` | 下载文件 |
+| `GET` | `/stream/video` | 视频流播放 |
 | `GET` | `/docs` | API 文档 |
 | `GET` | `/openapi.json` | OpenAPI 规范 |
 
@@ -232,19 +235,93 @@ curl -o image.jpg https://your-domain.com/file/AgACAgIAAxkB...
 
 > 下载端点无需 API Token 鉴权
 
+### 视频流播放
+
+将多个 Telegram 文件分片串联为一个连续的视频流，支持浏览器 video 标签原生播放和进度条拖动。
+
+```html
+<!-- 明文格式（短视频） -->
+<video controls src="https://your-domain.com/stream/video?chunks=fileId1:10485760,fileId2:5242880"></video>
+
+<!-- 压缩格式（长视频） -->
+<video controls src="https://your-domain.com/stream/video?chunks=eJxLzs9Nz0nVSMnPz0nVBAA..."></video>
+```
+
+**URL 格式说明**
+
+分片参数格式：`file_id:chunk_size`，多个分片用逗号分隔
+
+```
+/stream/video?chunks=AgACAgIAAxk:10485760,AgACAgIAAxl:10485760,AgACAgIAAxm:5242880
+                     └─────┬─────┘ └────┬────┘  └─────┬─────┘ └────┬────┘
+                        file_id      size(10MB)    file_id     size(5MB)
+```
+
+**压缩 URL（推荐用于 >5 个分片）**
+
+使用 deflate + base64url 编码可将 URL 压缩 60-75%：
+
+```javascript
+// 前端压缩函数
+async function compressChunks(chunks) {
+  const data = chunks.map(c => `${c.file_id}:${c.size}`).join(',')
+  const stream = new Blob([data]).stream()
+    .pipeThrough(new CompressionStream('deflate-raw'))
+  const compressed = await new Response(stream).arrayBuffer()
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(compressed)))
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+// 使用示例
+const chunks = [
+  { file_id: 'AgACAgIAAxk...', size: 10485760 },
+  { file_id: 'AgACAgIAAxl...', size: 10485760 },
+  { file_id: 'AgACAgIAAxm...', size: 5242880 }
+]
+
+const compressed = await compressChunks(chunks)
+const videoUrl = `/stream/video?chunks=${compressed}`
+```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `chunks` | string | 是 | 明文格式（`file_id:size,...`）或压缩格式（base64url） |
+
+**响应特性**
+
+- ✅ 支持 HTTP Range 请求（206 Partial Content）
+- ✅ 浏览器 video 标签原生支持
+- ✅ 进度条拖动（seek）
+- ✅ 完整分片流式传输，仅首尾分片加载到内存
+- ✅ 自动检测格式（明文/压缩）
+
+**URL 长度限制**
+
+| 视频大小 | 分片数 | 明文长度 | 压缩后 | 状态 |
+|---------|-------|---------|--------|------|
+| 100MB | 10 | ~1000字符 | ~400字符 | ✅ |
+| 500MB | 50 | ~5000字符 | ~1500字符 | ✅ |
+| 1GB | 100 | ~10000字符 | ~2500字符 | ✅ (推荐压缩) |
+| 2GB+ | 200+ | 超长 | ~5000字符 | ⚠️ 建议服务端存储映射 |
+
+> 视频流端点无需 API Token 鉴权
+
 ## 项目结构
 
 ```
 awsl-telegram-storage/
 ├── src/
-│   ├── index.ts           # 应用入口，路由配置
-│   ├── api_upload.ts      # 单文件上传端点
+│   ├── index.ts            # 应用入口，路由配置
+│   ├── api_upload.ts       # 单文件上传端点
 │   ├── api_upload_group.ts # 媒体组上传端点
-│   ├── api_download.ts    # 文件下载端点
-│   └── telegram.ts        # Telegram API 工具函数
+│   ├── api_download.ts     # 文件下载端点
+│   ├── api_stream.ts       # 视频流播放端点
+│   └── telegram.ts         # Telegram API 工具函数
 ├── wrangler.jsonc.template # Wrangler 配置模板
-├── tsconfig.json          # TypeScript 配置
-└── package.json           # 项目依赖
+├── tsconfig.json           # TypeScript 配置
+└── package.json            # 项目依赖
 ```
 
 ## 限制说明
@@ -253,6 +330,8 @@ awsl-telegram-storage/
 - 媒体组最多包含 10 个媒体
 - `photo` 类型会压缩图片，如需保持原图请使用 `document` 类型
 - 通过 URL 上传时，Telegram 服务器需要能访问该 URL
+- 视频流 URL 参数长度建议不超过 8KB，超长视频建议使用压缩格式
+- 每个视频分片建议 10MB，Cloudflare Workers 单次请求内存限制 128MB
 
 ## 获取 Telegram Chat ID
 
