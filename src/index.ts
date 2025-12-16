@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import { FileUploadEndpoint } from './api_upload'
 import { MediaGroupUploadEndpoint } from './api_upload_group'
 import { FileDownloadEndpoint } from './api_download'
+import { VideoStreamEndpoint } from './api_stream'
 
 type Bindings = {
   BOT_TOKEN: string
@@ -28,5 +29,6 @@ const openapi = fromHono(app, {
 openapi.post('/api/upload', FileUploadEndpoint)
 openapi.post('/api/upload/group', MediaGroupUploadEndpoint)
 openapi.get('/file/:file_id', FileDownloadEndpoint)
+openapi.get('/stream/video', VideoStreamEndpoint)
 
 export default app
