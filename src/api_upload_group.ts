@@ -2,6 +2,7 @@ import { OpenAPIRoute } from 'chanfana'
 import { z } from 'zod'
 import type { Context } from 'hono'
 import { FileInfo, buildApiUrl, parsePhotoFiles } from './telegram'
+import { validateAuth } from './auth'
 
 export class MediaGroupUploadEndpoint extends OpenAPIRoute {
   schema = {
@@ -39,9 +40,10 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
   }
 
   async handle(c: Context) {
-    const token = c.req.header('X-Api-Token')
-    if (!token || token !== c.env.API_TOKEN) {
-      return c.json({ success: false, error: 'Unauthorized' }, 401)
+    // Validate API_TOKEN or JWT
+    const auth = await validateAuth(c)
+    if (!auth.success) {
+      return c.json({ success: false, error: auth.error || 'Unauthorized' }, 401)
     }
 
     const body = await c.req.json()
