@@ -199,6 +199,10 @@ async function compressChunks(chunks) {
     const headers = new Headers()
     headers.set('Accept-Ranges', 'bytes')
     headers.set('Content-Length', String(contentLength))
+    headers.set('Content-Type', 'video/mp4')
+
+    // Add cache control for better seeking performance
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable')
 
     if (statusCode === 206) {
       headers.set('Content-Range', `bytes ${start}-${end}/${totalSize}`)
@@ -287,9 +291,41 @@ function createVideoStream(
 }
 
 /**
- * Fetch chunk response from Telegram (returns Response for streaming)
+ * Fetch chunk response from Telegram with Cloudflare Cache optimization
  */
-async function fetchChunkResponse(fileId: string, botToken: string): Promise<Response> {
+async function fetchChunkResponse(
+  fileId: string,
+  botToken: string
+): Promise<Response> {
+  // Get file path (will be cached by Cloudflare Cache API)
+  const filePath = await getFilePath(fileId, botToken)
+
+  // Fetch the file
+  const response = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`)
+
+  if (!response.ok) {
+    throw new Error(`Failed to download chunk: ${response.statusText}`)
+  }
+
+  return response
+}
+
+/**
+ * Get file path from Telegram API with Cloudflare Cache API caching
+ */
+async function getFilePath(fileId: string, botToken: string): Promise<string> {
+  // Use Cloudflare Cache API for persistent caching across requests
+  // Cache key must be a valid URL format (doesn't need to be real)
+  const cache = caches.default
+  const cacheKey = new Request(`https://cache/telegram/file-path/${fileId}`)
+
+  // Try to get from cache first
+  const cachedResponse = await cache.match(cacheKey)
+  if (cachedResponse) {
+    return await cachedResponse.text()
+  }
+
+  // Cache miss, fetch from Telegram API
   const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
   const fileData = await fileRes.json() as any
 
@@ -298,11 +334,15 @@ async function fetchChunkResponse(fileId: string, botToken: string): Promise<Res
   }
 
   const filePath = fileData.result.file_path
-  const response = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`)
 
-  if (!response.ok) {
-    throw new Error(`Failed to download chunk: ${response.statusText}`)
-  }
+  // Store in cache for 24 hours (file paths are immutable)
+  const cacheResponse = new Response(filePath, {
+    headers: {
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Type': 'text/plain',
+    },
+  })
+  await cache.put(cacheKey, cacheResponse)
 
-  return response
+  return filePath
 }
