@@ -9,13 +9,13 @@
   },
   "dependencies": {
     "chanfana": "^2.8.3",
-    "hono": "^4.10.8",
+    "hono": "^4.11.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20251212.0",
-    "@types/node": "^25.0.1",
+    "@cloudflare/workers-types": "^4.20251217.0",
+    "@types/node": "^25.0.3",
     "typescript": "^5.9.3",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.56.0"
   }
 }
