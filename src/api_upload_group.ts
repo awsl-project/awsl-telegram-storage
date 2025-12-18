@@ -49,7 +49,8 @@ export class MediaGroupUploadEndpoint extends OpenAPIRoute {
     const body = await c.req.json()
     const urls = body.urls as string[]
     const caption = body.caption as string | undefined
-    const chatId = body.chat_id as string || c.env.CHAT_ID
+    // Use chat_id from request body, fallback to token chat_id, then env CHAT_ID
+    const chatId = body.chat_id as string || auth.chatId || c.env.CHAT_ID
 
     if (!urls || urls.length < 1) {
       return c.json({ success: false, error: 'At least 1 URL required' }, 400)

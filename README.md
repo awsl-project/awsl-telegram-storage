@@ -213,14 +213,15 @@ curl -X POST https://your-domain.com/api/upload/group \
 
 ### 生成临时 JWT Token
 
-用于生成具有时效性的上传令牌，适合需要临时授权的场景。
+用于生成具有时效性的上传令牌，适合需要临时授权的场景。支持将 chat_id 嵌入 Token，后续上传时无需再指定。
 
 ```bash
 curl -X POST https://your-domain.com/api/token/generate \
   -H "X-Api-Token: your_api_token" \
   -H "Content-Type: application/json" \
   -d '{
-    "expires_in": 3600
+    "expires_in": 3600,
+    "chat_id": "-1001234567890"
   }'
 ```
 
@@ -229,6 +230,7 @@ curl -X POST https://your-domain.com/api/token/generate \
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `expires_in` | number | 否 | `3600` | Token 有效期（秒），最大 86400（24小时） |
+| `chat_id` | string | 否 | - | Telegram Chat ID，嵌入 Token 后上传时可省略此参数 |
 
 **响应示例**
 

@@ -4,6 +4,18 @@ import { sign } from 'hono/jwt'
 import { z } from 'zod'
 
 /**
+ * JWT payload structure for upload tokens
+ */
+interface UploadJWTPayload {
+  iss: string    // Issuer
+  sub: string    // Subject
+  iat: number    // Issued at
+  exp: number    // Expiration time
+  scope: string  // Allowed operations
+  chat_id?: string  // Optional Telegram chat ID
+}
+
+/**
  * API endpoint to generate temporary JWT tokens for upload authentication
  * Requires the main API_TOKEN for authorization
  * Generated JWTs have a maximum validity of 24 hours
@@ -26,6 +38,11 @@ export class TokenGenerate extends OpenAPIRoute {
                 required: false,
                 default: 3600,
                 example: 3600
+              }),
+              chat_id: Str({
+                description: 'Telegram chat ID to embed in the token (optional, for use in subsequent uploads)',
+                required: false,
+                example: '-1001234567890'
               })
             })
           }
@@ -81,6 +98,7 @@ export class TokenGenerate extends OpenAPIRoute {
     // Parse and validate request body
     const data = await this.getValidatedData<typeof this.schema>()
     let expiresIn = data.body.expires_in || 3600 // Default: 1 hour
+    const chatId = data.body.chat_id // Optional chat_id parameter
 
     // Enforce maximum validity of 24 hours (86400 seconds)
     const MAX_EXPIRY = 86400
@@ -109,12 +127,13 @@ export class TokenGenerate extends OpenAPIRoute {
     const now = Math.floor(Date.now() / 1000)
     const exp = now + expiresIn
 
-    const payload = {
+    const payload: UploadJWTPayload = {
       iss: 'awsl-telegram-storage', // Issuer
       sub: 'upload',                 // Subject: upload operations
       iat: now,                      // Issued at
       exp: exp,                      // Expiration time
-      scope: 'upload'                // Allowed operations
+      scope: 'upload',               // Allowed operations
+      ...(chatId && { chat_id: chatId })  // Include chat_id if provided
     }
 
     try {

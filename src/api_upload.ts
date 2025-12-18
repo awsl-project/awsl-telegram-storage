@@ -51,7 +51,8 @@ export class FileUploadEndpoint extends OpenAPIRoute {
     const file = body['file']
     const url = body['url'] as string | undefined
     const mediaType = (body['media_type'] as string) || 'photo'
-    const chatId = (body['chat_id'] as string) || c.env.CHAT_ID
+    // Use chat_id from request body, fallback to token chat_id, then env CHAT_ID
+    const chatId = (body['chat_id'] as string) || auth.chatId || c.env.CHAT_ID
 
     if (!file && !url) {
       return c.json({ success: false, error: 'No file or URL provided' }, 400)

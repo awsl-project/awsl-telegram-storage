@@ -8,6 +8,7 @@ export interface AuthResult {
   success: boolean
   error?: string
   tokenType?: 'api_token' | 'jwt'
+  chatId?: string  // Chat ID extracted from JWT token (if present)
 }
 
 /**
@@ -61,7 +62,8 @@ export async function validateAuth(c: Context): Promise<AuthResult> {
 
       return {
         success: true,
-        tokenType: 'jwt'
+        tokenType: 'jwt',
+        chatId: payload.chat_id as string | undefined  // Extract chat_id from JWT payload
       }
     } catch (error) {
       console.error('JWT verification error:', error)

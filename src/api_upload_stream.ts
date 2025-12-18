@@ -94,7 +94,8 @@ export class StreamingUploadEndpoint extends OpenAPIRoute {
       // Parse multipart form data
       const body = await c.req.parseBody()
       const file = body['file']
-      const chatId = (body['chat_id'] as string) || c.env.CHAT_ID
+      // Use chat_id from request body, fallback to token chat_id, then env CHAT_ID
+      const chatId = (body['chat_id'] as string) || auth.chatId || c.env.CHAT_ID
       const chunkSizeParam = body['chunk_size'] as string | undefined
       const filename = (body['filename'] as string) || (file instanceof File ? file.name : 'unknown')
 
