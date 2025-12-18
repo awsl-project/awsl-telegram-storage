@@ -193,7 +193,21 @@ async function compressChunks(chunks) {
       })
     }
 
-    const contentLength = end - start + 1
+    // Pre-calculate tasks to validate the range and compute actual content length
+    const tasks = calculateTasks(chunks, start, end)
+
+    // If no data in the requested range, return 416 Range Not Satisfiable
+    if (tasks.length === 0) {
+      return new Response('Range Not Satisfiable', {
+        status: 416,
+        headers: {
+          'Content-Range': `bytes */${totalSize}`,
+        },
+      })
+    }
+
+    // Calculate actual content length from tasks
+    const contentLength = tasks.reduce((sum, task) => sum + (task.sliceEnd - task.sliceStart), 0)
 
     // Build response headers
     const headers = new Headers()
@@ -210,30 +224,30 @@ async function compressChunks(chunks) {
 
     // Create readable stream
     const botToken = c.env.BOT_TOKEN
-    const stream = createVideoStream(chunks, start, end, botToken)
+    const stream = createVideoStreamFromTasks(tasks, botToken)
 
     return new Response(stream, { status: statusCode, headers })
   }
 }
 
 /**
- * Create a ReadableStream that fetches and concatenates video chunks
- * with support for Range requests (byte-level seeking)
+ * Task information for streaming a chunk
  */
-function createVideoStream(
+interface ChunkTask {
+  fileId: string
+  sliceStart: number
+  sliceEnd: number
+  fullChunk: boolean  // true = can pipe directly, false = need to slice
+}
+
+/**
+ * Calculate which chunks and byte ranges are needed for a given request range
+ */
+function calculateTasks(
   chunks: ChunkInfo[],
   start: number,
-  end: number,
-  botToken: string
-): ReadableStream<Uint8Array> {
-  // Pre-calculate which chunks we need and how to slice them
-  interface ChunkTask {
-    fileId: string
-    sliceStart: number
-    sliceEnd: number
-    fullChunk: boolean  // true = can pipe directly, false = need to slice
-  }
-
+  end: number
+): ChunkTask[] {
   const tasks: ChunkTask[] = []
   let currentPos = 0
 
@@ -242,24 +256,41 @@ function createVideoStream(
     const chunkEnd = currentPos + chunk.size - 1
     currentPos += chunk.size
 
+    // Skip chunks entirely before the requested range
     if (chunkEnd < start) continue
+    // Stop processing chunks entirely after the requested range
     if (chunkStart > end) break
 
+    // Calculate slice boundaries relative to this chunk
     const sliceStart = Math.max(0, start - chunkStart)
     const sliceEnd = Math.min(chunk.size, end - chunkStart + 1)
 
-    tasks.push({
-      fileId: chunk.fileId,
-      sliceStart,
-      sliceEnd,
-      fullChunk: sliceStart === 0 && sliceEnd === chunk.size
-    })
+    // Only add task if there's actual data to return
+    if (sliceEnd > sliceStart) {
+      tasks.push({
+        fileId: chunk.fileId,
+        sliceStart,
+        sliceEnd,
+        fullChunk: sliceStart === 0 && sliceEnd === chunk.size
+      })
+    }
   }
 
+  return tasks
+}
+
+/**
+ * Create a ReadableStream from pre-calculated chunk tasks
+ */
+function createVideoStreamFromTasks(
+  tasks: ChunkTask[],
+  botToken: string
+): ReadableStream<Uint8Array> {
   let taskIndex = 0
 
   return new ReadableStream({
     async pull(controller) {
+      // Check if all tasks are completed
       if (taskIndex >= tasks.length) {
         controller.close()
         return
@@ -271,7 +302,7 @@ function createVideoStream(
         const response = await fetchChunkResponse(task.fileId, botToken)
 
         if (task.fullChunk) {
-          // Pipe directly without loading into memory
+          // Pipe entire chunk directly without loading into memory
           const reader = response.body!.getReader()
           while (true) {
             const { done, value } = await reader.read()
@@ -280,8 +311,25 @@ function createVideoStream(
           }
         } else {
           // Need to slice, load into memory
-          const data = new Uint8Array(await response.arrayBuffer())
-          controller.enqueue(data.slice(task.sliceStart, task.sliceEnd))
+          const arrayBuffer = await response.arrayBuffer()
+          if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+            throw new Error(`Empty response from Telegram for chunk ${task.fileId}`)
+          }
+
+          const data = new Uint8Array(arrayBuffer)
+
+          // Validate slice boundaries
+          if (task.sliceEnd > data.length) {
+            throw new Error(`Slice end ${task.sliceEnd} exceeds data length ${data.length}`)
+          }
+
+          const slicedData = data.slice(task.sliceStart, task.sliceEnd)
+
+          if (slicedData.length === 0) {
+            throw new Error(`Sliced data is empty: slice(${task.sliceStart}, ${task.sliceEnd}) from ${data.length} bytes`)
+          }
+
+          controller.enqueue(slicedData)
         }
       } catch (error) {
         controller.error(error)
