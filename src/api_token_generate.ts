@@ -96,9 +96,9 @@ export class TokenGenerate extends OpenAPIRoute {
     }
 
     // Parse and validate request body
-    const data = await this.getValidatedData<typeof this.schema>()
-    let expiresIn = data.body.expires_in || 3600 // Default: 1 hour
-    const chatId = data.body.chat_id // Optional chat_id parameter
+    const body = await c.req.json()
+    let expiresIn = body.expires_in || 3600 // Default: 1 hour
+    const chatId = body.chat_id // Optional chat_id parameter
 
     // Enforce maximum validity of 24 hours (86400 seconds)
     const MAX_EXPIRY = 86400
