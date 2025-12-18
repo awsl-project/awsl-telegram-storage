@@ -5,13 +5,15 @@
 ## 功能特性
 
 - **单文件上传** - 支持通过文件或 URL 上传图片/文档到 Telegram
+- **流式上传** - 真正的流式上传支持，自动分块上传大文件（>50MB），无需将整个文件加载到内存
 - **媒体组上传** - 批量上传多张图片（1-10张）组成媒体组
 - **文件下载** - 通过 file_id 从 Telegram 下载文件
 - **视频流播放** - 多分片视频串联，支持 HTTP Range 请求和进度条拖动
 - **压缩优化** - 长视频支持 deflate 压缩 URL 参数
+- **JWT 认证** - 支持生成临时 JWT Token 用于上传操作，有效期最长 24 小时
 - **OpenAPI 文档** - 自动生成的 API 文档，支持在线调试
 - **CORS 支持** - 跨域请求支持
-- **API 鉴权** - 基于 Token 的接口访问控制
+- **API 鉴权** - 基于 Token 的接口访问控制，支持永久 API Token 和临时 JWT Token
 
 ## 架构图
 
@@ -120,7 +122,9 @@ pnpm run build
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/api/upload` | 上传单个文件 |
+| `POST` | `/api/upload/stream` | 流式上传（自动分块） |
 | `POST` | `/api/upload/group` | 上传媒体组 |
+| `POST` | `/api/token/generate` | 生成临时 JWT Token |
 | `GET` | `/file/:file_id` | 下载文件 |
 | `GET` | `/stream/video` | 视频流播放 |
 | `GET` | `/docs` | API 文档 |
@@ -206,6 +210,96 @@ curl -X POST https://your-domain.com/api/upload/group \
   ]
 }
 ```
+
+### 生成临时 JWT Token
+
+用于生成具有时效性的上传令牌，适合需要临时授权的场景。
+
+```bash
+curl -X POST https://your-domain.com/api/token/generate \
+  -H "X-Api-Token: your_api_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expires_in": 3600
+  }'
+```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `expires_in` | number | 否 | `3600` | Token 有效期（秒），最大 86400（24小时） |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 3600,
+  "expires_at": "2025-12-18T12:00:00.000Z"
+}
+```
+
+**使用生成的 JWT Token 上传文件**
+
+```bash
+# 使用 JWT Token 替代 API Token
+curl -X POST https://your-domain.com/api/upload \
+  -H "X-Api-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -F "file=@/path/to/image.jpg" \
+  -F "media_type=photo"
+```
+
+> JWT Token 只能用于上传操作（`/api/upload`、`/api/upload/stream`、`/api/upload/group`），生成新 Token 仍需使用永久 API Token
+
+### 流式上传（大文件）
+
+适合上传大文件（>50MB），自动分块上传，无需将整个文件加载到内存。
+
+```bash
+curl -X POST https://your-domain.com/api/upload/stream \
+  -H "X-Api-Token: your_api_token" \
+  -F "file=@/path/to/large-video.mp4" \
+  -F "chunk_size=10485760"
+```
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `file` | File | 是 | - | 要上传的文件 |
+| `chunk_size` | string | 否 | `10485760` | 分块大小（字节），最大 52428800（50MB） |
+| `chat_id` | string | 否 | 环境变量 | Telegram Chat ID |
+| `filename` | string | 否 | 文件名 | 原始文件名 |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "total_size": 104857600,
+  "chunk_size": 10485760,
+  "total_chunks": 10,
+  "filename": "large-video.mp4",
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "file_id": "BQACAgIAAxkB...",
+      "file_size": 10485760,
+      "file_name": "large-video.mp4.part1"
+    },
+    {
+      "chunk_index": 1,
+      "file_id": "BQACAgIAAxkB...",
+      "file_size": 10485760,
+      "file_name": "large-video.mp4.part2"
+    }
+  ]
+}
+```
+
+> 流式上传返回的分块信息可用于视频流播放端点（`/stream/video`）
 
 ### 下载文件
 
@@ -313,25 +407,30 @@ const videoUrl = `/stream/video?chunks=${compressed}`
 ```
 awsl-telegram-storage/
 ├── src/
-│   ├── index.ts            # 应用入口，路由配置
-│   ├── api_upload.ts       # 单文件上传端点
-│   ├── api_upload_group.ts # 媒体组上传端点
-│   ├── api_download.ts     # 文件下载端点
-│   ├── api_stream.ts       # 视频流播放端点
-│   └── telegram.ts         # Telegram API 工具函数
-├── wrangler.jsonc.template # Wrangler 配置模板
-├── tsconfig.json           # TypeScript 配置
-└── package.json            # 项目依赖
+│   ├── index.ts              # 应用入口，路由配置
+│   ├── auth.ts               # 认证中间件（API Token / JWT）
+│   ├── api_upload.ts         # 单文件上传端点
+│   ├── api_upload_stream.ts  # 流式上传端点（自动分块）
+│   ├── api_upload_group.ts   # 媒体组上传端点
+│   ├── api_token_generate.ts # JWT Token 生成端点
+│   ├── api_download.ts       # 文件下载端点
+│   ├── api_stream.ts         # 视频流播放端点
+│   └── telegram.ts           # Telegram API 工具函数
+├── wrangler.jsonc.template   # Wrangler 配置模板
+├── tsconfig.json             # TypeScript 配置
+└── package.json              # 项目依赖
 ```
 
 ## 限制说明
 
 - Telegram Bot API 对文件大小有限制，详见 [官方文档](https://core.telegram.org/bots/api#sending-files)
+- 单次上传文件最大 50MB，超大文件请使用流式上传端点自动分块
 - 媒体组最多包含 10 个媒体
 - `photo` 类型会压缩图片，如需保持原图请使用 `document` 类型
 - 通过 URL 上传时，Telegram 服务器需要能访问该 URL
 - 视频流 URL 参数长度建议不超过 8KB，超长视频建议使用压缩格式
 - 每个视频分片建议 10MB，Cloudflare Workers 单次请求内存限制 128MB
+- JWT Token 最大有效期 24 小时（86400 秒）
 
 ## 获取 Telegram Chat ID
 
