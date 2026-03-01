@@ -262,6 +262,12 @@ curl https://your-domain.com/file/AgACAgIAAxkB...
 # 禁用浏览器缓存
 curl https://your-domain.com/file/AgACAgIAAxkB...?cache=false
 
+# 直接指定返回 Content-Type
+curl "https://your-domain.com/file/AgACAgIAAxkB...?mime_type=video/mp4"
+
+# 同时指定文件名（用于 Content-Disposition）
+curl "https://your-domain.com/file/AgACAgIAAxkB...?mime_type=video/mp4&filename=movie.mp4"
+
 # 保存到本地
 curl -o image.jpg https://your-domain.com/file/AgACAgIAAxkB...
 ```
@@ -271,6 +277,8 @@ curl -o image.jpg https://your-domain.com/file/AgACAgIAAxkB...
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `cache` | string | 否 | `true` | 是否启用浏览器缓存（`true`/`false`） |
+| `mime_type` | string | 否 | - | 直接指定响应 `Content-Type`（如 `video/mp4`） |
+| `filename` | string | 否 | - | 指定响应 `Content-Disposition` 的文件名（如 `movie.mp4`） |
 
 **响应头**
 
